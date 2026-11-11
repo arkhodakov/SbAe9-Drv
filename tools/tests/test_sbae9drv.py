@@ -113,8 +113,9 @@ elif name == "pgrep":
     assert args[0] == "-x" and len(args) == 2, args
     sys.exit(0 if args[1] in state["running"] else 1)
 elif name == "modinfo":
-    assert args[:1] == ["-F"] and args[2] == str(root / KO_LITERAL), args
-    print({"vermagic": state["vermagic"], "parm": state["parm"], "version": "0.12.4"}[args[1]])
+    assert args[:1] == ["-F"] and args[2].endswith("/snd-hda-codec-creative-ae9.ko"), args
+    parm = state["plain_parm"] if args[2] in state["plain"] else state["parm"]
+    print({"vermagic": state["vermagic"], "parm": parm, "version": "0.12.4"}[args[1]])
 elif name == "journalctl":
     if args == ["--sync"]:
         sys.exit(0)
@@ -124,9 +125,11 @@ elif name == "journalctl":
         if stamp >= since:
             print(line)
 elif name == "insmod":
-    assert args == [str(root / KO_LITERAL)], args
+    assert len(args) == 1 and args[0].endswith("/snd-hda-codec-creative-ae9.ko"), args
+    plain = args[0] in state["plain"]
     (MODULE_DIR / "parameters").mkdir(parents=True)
-    (MODULE_DIR / "parameters/board_d0").write_text("1\n")
+    if not plain:
+        (MODULE_DIR / "parameters/board_d0").write_text("1\n")
     mode = state["probe"]
     if mode == "fail":
         kernel(PREFIX + "DSP did not start after 3 attempt(s); not registering the card")
@@ -141,12 +144,15 @@ elif name == "insmod":
         (asound / "id").write_text("AE9\n")
         lines = [PREFIX + "posted_flush: every register write is read back (ASMedia bridge)",
                  PREFIX + "bridge 0000:03:00.0 (ASMedia ASM1083/1085): 64 KB spare after each DMA buffer",
-                 PREFIX + "ASMedia bridge: skipping the secondary bus reset (it takes the bridge down at ring start; bus_reset=1 forces it)",
-                 PREFIX + ("board D0: GPIO pin 0 pulsed, but the DAC does not answer (48/40 = 0xff): "
-                           "the analog outputs will be silent" if mode == "deaf" else
-                           "board D0: GPIO pin 0 pulsed, the DAC answers (48/40 = 0x72)"),
-                 PREFIX + "DSP firmware load: 0",
-                 "unrelated: usb 1-1: new device"]
+                 PREFIX + ("secondary bus reset via 0000:03:00.0: 0, ready after 120 ms (id 0x00101102)" if plain else
+                           "ASMedia bridge: skipping the secondary bus reset (it takes the bridge down at ring start; bus_reset=1 forces it)"),
+                 PREFIX + ("post_windows: 246 SPI frames (10 without reply), 49 CA0113 commands, 45 writes" if plain else
+                           "post_windows: 246 SPI frames (0 without reply), 49 CA0113 commands, 45 writes")]
+        if not plain:
+            lines.append(PREFIX + ("board D0: GPIO pin 0 pulsed, but the DAC does not answer (48/40 = 0xff): "
+                                   "the analog outputs will be silent" if mode == "deaf" else
+                                   "board D0: GPIO pin 0 pulsed, the DAC answers (48/40 = 0x72)"))
+        lines += [PREFIX + "DSP firmware load: 0", "unrelated: usb 1-1: new device"]
         if mode in ("ok", "deaf"):
             lines.append(PREFIX + "Init complete: card Creative Labs Sound Blaster AE-9 at 0x0 irq 16")
         kernel(*lines)
@@ -225,7 +231,7 @@ def write_wav(path, seconds=8, rate=48000):
 
 class FirstContactToolTests(unittest.TestCase):
     REAL_TOOLS = ("cat", "grep", "tr", "sed", "head", "mkdir", "date", "dirname", "basename",
-                  "readlink", "md5sum", "sha256sum", "mktemp", "rm", "sync", "python3")
+                  "readlink", "md5sum", "sha256sum", "mktemp", "rm", "sync", "python3", "tail")
     STUBS = ("amixer", "aplay", "arecord", "insmod", "rmmod", "modinfo", "pgrep", "journalctl",
              "logger", "id", "sleep")
 
@@ -269,6 +275,7 @@ class FirstContactToolTests(unittest.TestCase):
         self.state = {"uid": 1000, "running": [], "vermagic": KERNEL + " SMP preempt mod_unload modversions",
                       "parm": "board_d0:Windows' board-D0 GPIO step before codec 1's set-up (uint)\n"
                               "debug:Log detail (uint)",
+                      "plain": [], "plain_parm": "debug:Log detail (uint)",
                       "probe": "ok", "kernel": [], "writes": [], "played": [], "master_max": 254,
                       "hp_master": 182, "switch_logged": True,
                       "mixer": {"Master Playback Volume": "214", "Master Playback Switch": "on",
@@ -375,12 +382,11 @@ class FirstContactToolTests(unittest.TestCase):
         for blocker in ("kernel is not " + KERNEL,
                         "snd_hda_intel is not in module_blacklist=",
                         "module vermagic is \"7.2.14-200.fc44.x86_64\"",
-                        "module has no board_d0 option (not the GPIO pin 0 build)",
                         f"firmware {firmware}/ctefx-desktop.bin is missing or not the tested image",
                         f"firmware {firmware}/ctefx-ae9-overlay.bin is missing or not the tested image",
                         "PipeWire is running"):
             self.assertIn("NOT READY: " + blocker, result.stdout)
-        self.assertEqual(result.stdout.count("NOT READY: "), 7)
+        self.assertEqual(result.stdout.count("NOT READY: "), 6)
         self.assertNotIn("Ready for:", result.stdout)
 
     def test_load_refuses_a_user_and_every_blocker(self):
@@ -423,6 +429,51 @@ class FirstContactToolTests(unittest.TestCase):
         self.assertNotIn("unrelated", result.stdout)
         self.assertIn("LOADED: card 0 (AE9)", result.stdout)
         self.assertEqual(self.load()["writes"], [])
+
+    def plain_module(self):
+        relative = "SbAe9-Drv-0.12.5/snd-hda-codec-creative-ae9.ko"
+        self.write(relative, "plain upstream module\n")
+        self.set_state(plain=[str(self.path(relative))])
+        return self.path(relative)
+
+    def test_check_and_load_take_a_plain_build_by_path(self):
+        plain = self.plain_module()
+        result = self.ok("check", str(plain))
+        self.assertIn(f"Module {plain}: version", result.stdout)
+        self.assertIn("without the GPIO pin 0 step (plain upstream)", result.stdout)
+        self.assertIn("Ready for:", result.stdout)
+        self.as_root()
+        result = self.ok("load", str(plain))
+        self.assertEqual(self.calls("insmod"), [["insmod", str(plain)]])
+        self.assertNotIn("MISSING", result.stdout)
+        self.assertNotIn("seen: board D0", result.stdout)
+        self.assertIn("bus reset: done", result.stdout)
+        self.assertIn("head unit: 246 SPI frames (10 without reply)", result.stdout)
+        self.assertIn("LOADED: card 0 (AE9)", result.stdout)
+        self.assertFalse(self.path(MODULE_DIR + "/parameters/board_d0").exists())
+        self.as_user()
+        self.ok("level")  # a module without board_d0 is accepted
+
+    def test_load_reports_the_fixed_build(self):
+        self.as_root()
+        result = self.ok("load")
+        self.assertIn("seen: board D0: GPIO pin 0 pulsed, the DAC answers", result.stdout)
+        self.assertIn("bus reset: skipped", result.stdout)
+        self.assertIn("head unit: 246 SPI frames (0 without reply)", result.stdout)
+        self.assertIn("with the GPIO pin 0 step (board_d0)", self.ok("check").stdout)
+
+    def test_load_refuses_a_wrong_module_path(self):
+        self.as_root()
+        self.refused("load", str(self.path("other.ko")), message="must be a snd-hda-codec-creative-ae9.ko")
+        self.refused("load", str(self.path("missing/snd-hda-codec-creative-ae9.ko")), message="No module at")
+        self.refused("load", "a", "b", message="At most one module path")
+        self.refused("level", "x", message="Exactly one argument")
+        self.assertEqual(self.calls("insmod"), [])
+
+    def test_a_loaded_module_with_the_step_off_is_refused(self):
+        self.loaded()
+        self.write(MODULE_DIR + "/parameters/board_d0", "0\n")
+        self.refused("level", message="board_d0 is '0', not 1")
 
     def test_load_fails_when_the_dac_does_not_answer(self):
         self.as_root()

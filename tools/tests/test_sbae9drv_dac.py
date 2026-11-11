@@ -141,6 +141,7 @@ class FakeDriver(dac.Debugfs):
                     self.dead = False
                     self.registers = headphone_registers()
                     self.registers[0x48][0x07] = 0x80  # the ES9038's power-on default
+                    self.bar2[0x300] = self.bar2.get(0x300, 0) | 0x1  # a modelled pin-level bit
                 self.gpio.append(value)
             self.bar2[offset] = value
         rb = self.data if offset == 0x208 else (self.group if offset == 0x804 else self.peek(offset))
@@ -371,7 +372,11 @@ class DacToolTests(unittest.TestCase):
                          "  ENGINE: unlocked, bit 23 busy, then done: it ran both transfers; the DAC answers 71")
         self.assertIn("  value 71", out)
         rows = {line.split()[0]: line for line in out if " = " in line and not line.startswith("  verb")}
-        self.assertEqual(len(rows), len(dac.ENGINE_REGISTERS) + len(dac.CHIPIO_REGISTERS))
+        offsets = {f"{offset:03x}" for offset, _, _ in dac.ENGINE_REGISTERS} | \
+            {f"{offset:03x}" for offset, _ in dac.GPIO_REGISTERS} | \
+            {f"{address:06x}" for address, _, _ in dac.CHIPIO_REGISTERS}
+        self.assertEqual(set(rows), offsets)
+        self.assertIn("GPIO block (BAR2 0x300-0x320):", out)
         self.assertTrue(rows["01c"].startswith("  01c = 00880480  ok"), rows["01c"])
         self.assertTrue(rows["189030"].startswith("  189030 = 00000081  ok"), rows["189030"])
         self.assertEqual(driver.verbs, [value for _, value, _ in dac.ENGINE_VERBS])
@@ -466,6 +471,17 @@ class DacToolTests(unittest.TestCase):
         self.assertIn("Muted as Windows does next: 48/07 = 81 (want 81), 49/0a = 07 (want 07)", out)
         self.assertTrue(out[-1].startswith("VERDICT: the DAC ANSWERS after the pin 0 pulse"), out[-1])
         self.assertEqual(driver.lock[-1], 0)
+
+    def test_pin0_shows_the_gpio_block_and_marks_what_changed(self):
+        driver = FakeDriver(dead_registers(), dead=True, wake_on_pin0=True)
+        out, _ = self.pin0(driver)
+        before = out.index("GPIO block before the pulse:")
+        after = out.index("GPIO block after the pulse:")
+        self.assertEqual(after - before - 2, len(dac.GPIO_REGISTERS))  # and the pulse line
+        changed = [line for line in out[after + 1:after + 1 + len(dac.GPIO_REGISTERS)] if "CHANGED" in line]
+        self.assertEqual(len(changed), 2, out)  # the modelled pin bit, and 0x320's last command
+        self.assertTrue(changed[0].startswith("  300 = 00000001") and "CHANGED from 00000000" in changed[0])
+        self.assertTrue(changed[1].startswith("  320 = 00000100") and "CHANGED from 00000105" in changed[1])
 
     def test_pin0_reports_a_dac_that_still_does_not_answer(self):
         driver = FakeDriver(dead_registers(), dead=True)

@@ -4,8 +4,10 @@
 # Fedora boot. The module is loaded by hand and never installed: the next boot does not
 # load it. Moved here from sb-ae9 (4ae84b2) on 2026-11-10.
 # The stages after check touch the card: run them only with the owner's OK.
-#   sh tools/sbae9drv_test.sh check         read-only: kernel, blacklist, card, bridge, module, firmware, PipeWire
-#   sudo sh tools/sbae9drv_test.sh load     insmod (no options), then the bring-up log with the board-D0 line
+#   sh tools/sbae9drv_test.sh check [KO]    read-only: kernel, blacklist, card, bridge, module, firmware, PipeWire
+#   sudo sh tools/sbae9drv_test.sh load [KO]  insmod (no options), then the bring-up log (with the board-D0 line
+#                                           when the module has the GPIO pin 0 step). KO: another build of
+#                                           snd-hda-codec-creative-ae9.ko, e.g. plain upstream for a comparison
 #   sh tools/sbae9drv_test.sh level         the Master range must end at $CEILING dB; then Master -36 dB
 #   sh tools/sbae9drv_test.sh headphones    head unit output to Headphones, Master at most -36 dB
 #   sh tools/sbae9drv_test.sh tones         -60, -50, -40 dBFS 1 kHz tones, left then right
@@ -81,8 +83,16 @@ fail() {
 }
 
 case "${1:-}" in
-    check|load|level|headphones|tones|ladder|mic|dac|pin0|unload) action=$1; [ "$#" = 1 ] || fail 'Exactly one argument.' ;;
-    *) printf 'Usage: sh %s check|load|level|headphones|tones|ladder|mic|dac|pin0|unload\n' "$0" >&2; exit 2 ;;
+    check|load)
+        action=$1
+        [ "$#" -le 2 ] || fail 'At most one module path after the stage.'
+        if [ "$#" = 2 ]; then
+            [ "${2##*/}" = "$DRIVER.ko" ] || fail "The module must be a $DRIVER.ko, not $2."
+            [ -f "$2" ] || fail "No module at $2."
+            KO=$(cd "$(dirname "$2")" && pwd)/$DRIVER.ko || fail "Cannot resolve $2."
+        fi ;;
+    level|headphones|tones|ladder|mic|dac|pin0|unload) action=$1; [ "$#" = 1 ] || fail 'Exactly one argument.' ;;
+    *) printf 'Usage: sh %s check|load [KO] | level|headphones|tones|ladder|mic|dac|pin0|unload\n' "$0" >&2; exit 2 ;;
 esac
 case "$action" in
     load|unload|dac|pin0) [ "$uid" = 0 ] || fail "$action needs root: sudo sh $0 $action" ;;
@@ -164,8 +174,10 @@ module_report() {
     fi
     vermagic=$(modinfo -F vermagic "$KO" 2>/dev/null)
     [ "${vermagic%% *}" = "$KERNEL" ] || printf 'module vermagic is "%s", not %s\n' "${vermagic%% *}" "$KERNEL"
-    modinfo -F parm "$KO" 2>/dev/null | grep -q '^board_d0:' ||
-        printf 'module has no board_d0 option (not the GPIO pin 0 build)\n'
+}
+has_board_d0() {
+    # Whether the module carries the GPIO pin 0 step (our fix; plain upstream has none).
+    modinfo -F parm "$1" 2>/dev/null | grep -q '^board_d0:'
 }
 firmware_report() {
     for pair in "ctefx-desktop.bin $MAIN_MD5" "ctefx-ae9-overlay.bin $OVERLAY_MD5"; do
@@ -199,8 +211,10 @@ preflight() {
 }
 need_card() {
     [ "$(bound_driver)" = "$DRIVER" ] || fail "The AE-9 is not bound to $DRIVER (driver: $(bound_driver)); run load first."
-    [ "$(read_file "$SYSMOD/parameters/board_d0")" = 1 ] ||
-        fail "board_d0 is '$(read_file "$SYSMOD/parameters/board_d0")', not 1 (the GPIO pin 0 step is off or missing)."
+    if [ -e "$SYSMOD/parameters/board_d0" ]; then
+        [ "$(read_file "$SYSMOD/parameters/board_d0")" = 1 ] ||
+            fail "board_d0 is '$(read_file "$SYSMOD/parameters/board_d0")', not 1 (the GPIO pin 0 step is off)."
+    fi
     card=$(card_index) || fail 'Expected exactly one ALSA card under the AE-9 PCI device.'
 }
 need_idle() {
@@ -215,9 +229,10 @@ check)
     if [ -f "$KO" ]; then
         sum=$(sha256sum "$KO")
         say "Module $KO: version $(modinfo -F version "$KO" 2>/dev/null), sha256 ${sum%% *}"
+        if has_board_d0 "$KO"; then say 'Module: with the GPIO pin 0 step (board_d0)'; else say 'Module: without the GPIO pin 0 step (plain upstream)'; fi
     fi
     if [ -e "$SYSMOD" ]; then
-        say "Loaded: board_d0=$(read_file "$SYSMOD/parameters/board_d0")"
+        say "Loaded: version $(read_file "$SYSMOD/version"), board_d0=$(read_file "$SYSMOD/parameters/board_d0")"
         if card=$(card_index); then
             say "Card $card ($(read_file "/proc/asound/card$card/id"))"
             pcm_states "$card" | while IFS= read -r line; do say "$line"; done
@@ -252,11 +267,20 @@ load)
     [ "$rc" = 0 ] || fail "insmod exited with $rc."
     for expect in 'posted_flush: every register write is read back (ASMedia bridge)' \
                   '(ASMedia ASM1083/1085): 64 KB spare after each DMA buffer' \
-                  'ASMedia bridge: skipping the secondary bus reset' \
-                  'board D0: GPIO pin 0 pulsed, the DAC answers' \
                   'DSP firmware load: 0'; do
         case "$lines" in *"$expect"*) say "seen: $expect" ;; *) say "MISSING: $expect" ;; esac
     done
+    if has_board_d0 "$KO"; then
+        expect='board D0: GPIO pin 0 pulsed, the DAC answers'
+        case "$lines" in *"$expect"*) say "seen: $expect" ;; *) say "MISSING: $expect" ;; esac
+    fi
+    case "$lines" in
+        *'secondary bus reset via '*) say 'bus reset: done (0.12.5 and later reset every card)' ;;
+        *'skipping the secondary bus reset'*) say 'bus reset: skipped' ;;
+    esac
+    case "$lines" in
+        *'SPI frames ('*) say "head unit: $(printf '%s\n' "$lines" | sed -n 's/.*post_windows: \([0-9]* SPI frames ([0-9]* without reply)\).*/\1/p' | tail -n 1)" ;;
+    esac
     case "$lines" in
         *'but the DAC does not answer'*) fail 'The DAC does not answer after the board-D0 step: the analog outputs stay silent (the module stays loaded).' ;;
     esac

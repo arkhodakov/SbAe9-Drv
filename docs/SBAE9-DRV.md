@@ -1,7 +1,7 @@
 # 3xHelix SbAe9-Drv: review and first contact
 
 > **Where this lives.** The `workbench` branch of the owner's fork
-> (`arkhodakov/SbAe9-Drv`): upstream `main` + the fixes of 3xHelix/SbAe9-Drv#3 +
+> (`arkhodakov/SbAe9-Drv`): upstream `main` (0.12.5 since 2026-11-11) + the fixes of 3xHelix/SbAe9-Drv#3 +
 > our test tools (`tools/`, `tools/tests/`) and this run card. The tools, their
 > tests and this file came from sb-ae9 at `4ae84b2` on 2026-11-10; sb-ae9 itself
 > is no longer developed. "sb-ae9's" below names files that stayed there. Private
@@ -209,6 +209,32 @@ python3 -B tools/sbae9drv_firmware.py --sys local/CtxHda.sys --out local/sbae9dr
   ```sh
   make -C /lib/modules/7.2.13-200.fc44.x86_64/build M=$HOME/Software/Personal/SbAe9-Drv modules
   ```
+
+- **2026-11-11, the author's review of #3:** he agrees (Windows raises pin 0 at
+  every boot; his captures show it too; his unload/shutdown leave it low, as
+  Windows) and wants it in, rebased onto 0.12.5 and with Windows' ~16 ms wait
+  before raising pin 0 (we had 1 ms). His guess: we hit it hard because 0.12.4
+  skipped the card reset behind ASMedia, so pin 0 stayed low after a reload;
+  0.12.5 resets every card at load (`bus_reset`, default on). On his two cards
+  (IDT and ASMedia bridges) the DACs answer and the handshake gets through. He
+  asks for plain 0.12.5 without our patch after a PSU-off cold boot and after a
+  reload (do the DACs answer, does the mic work), an `ae9-full-dump` of that
+  version, and how the GPIOs look.
+  - Against the guess, for the mic: on 0.12.4 the head unit missed its first 10
+    frames at the first load after a power-off too, not only after the reload.
+    The DAC was read only after the reload.
+  - Done locally: both commits rebased onto upstream `main` (`3094f27`, 0.12.5 +
+    README): `c2593ed` (pin 0, now `msleep(16)`), `f4cf122`; `workbench`
+    replayed on top. Not pushed yet (needs the owner's build check).
+  - Plain 0.12.5 for the test: worktree `~/Software/Personal/SbAe9-Drv-0.12.5`
+    (detached at `upstream/main`, no `board_d0`).
+  - The runner takes another module (`check [KO]`, `load [KO]`), accepts a build
+    without `board_d0`, reports the bus-reset and head-unit-frames lines at
+    load, and the engine section and the pin0 stage read the whole GPIO block
+    (0x300-0x320; 0x320 only echoes the last command).
+  - Risk: 0.12.5 resets the card through our ASM1083 at every load. Our old
+    wedges (sb-ae9 `docs/INVESTIGATION.md`) came from unflushed ring writes, not
+    from a reset, and Kaiba's same bridge passed 0.12.5's tests.
 
 - **Built** by the owner on 2026-11-10 from `7b0322b` (clean tree), with no
   compiler warnings:

@@ -198,6 +198,22 @@ ENGINE_REGISTERS = (
     (0x89C, "engine enable acknowledged (bit 0)", (0x1, 0x1)),
 )
 
+# The card's GPIO block (HdGp, sb-ae9 docs/reverse-engineering/
+# ctxhda-acm-analysis.md 3.1): which register holds a pin's level is not
+# known, so all of them are read. 0x320 takes commands (pin | value << 8)
+# and reads back the last one, not the pin levels.
+GPIO_REGISTERS = (
+    (0x300, "bit per pin (HdGp +0x78/+0x80)"),
+    (0x304, "pin enables, byte (+0x28/+0x30; Windows sets ff)"),
+    (0x308, "bytes 0x308/0x309, bit per pin (+0x38..+0x50)"),
+    (0x30C, "1 << pin (+0x68/+0x70)"),
+    (0x310, "16 bits per pin: pins 0 and 1 (+0x58/+0x60)"),
+    (0x314, "16 bits per pin: pins 2 and 3"),
+    (0x318, "16 bits per pin: pins 4 and 5"),
+    (0x31C, "16 bits per pin: pins 6 and 7"),
+    (0x320, "command register (reads the last command)"),
+)
+
 # ChipIO (codec 1 memory): the I2S clocks and the power registers that
 # 3xHelix's scripts/ae9-full-dump.sh reads, idle only. 0x18902c = f and
 # 0x189030 = 81 are what its author reads on a healthy AE-9 (2026-11-06, idle).
@@ -463,6 +479,21 @@ def describe_wide(name, value, meaning, expected, width=8):
     return f"{name} = {value:0{width}x}  {verdict:7} {want:26} {meaning}".rstrip()
 
 
+def gpio_values(dbg):
+    return {offset: dbg.r2(offset) for offset, _ in GPIO_REGISTERS}
+
+
+def gpio_lines(values, before=None):
+    """One line per GPIO register; with before, the ones that changed are marked."""
+    lines = []
+    for offset, meaning in GPIO_REGISTERS:
+        mark = ""
+        if before is not None and before[offset] != values[offset]:
+            mark = f"  CHANGED from {before[offset]:08x}"
+        lines.append(f"{offset:03x} = {values[offset]:08x}  {meaning}{mark}")
+    return lines
+
+
 def engine(dbg, klog, card, root=STREAM_STATUS, out=None):
     """Read-only: the command engine, one traced DAC read, ChipIO, codec GPIO
     and codec 2. Lines go to out as they are read, as in dump()."""
@@ -474,6 +505,8 @@ def engine(dbg, klog, card, root=STREAM_STATUS, out=None):
     out.append("Command engine (BAR2):")
     for offset, meaning, expected in ENGINE_REGISTERS:
         out.append("  " + describe_wide(f"{offset:03x}", dbg.r2(offset), meaning, expected))
+    out.append("GPIO block (BAR2 0x300-0x320):")
+    out.extend("  " + line for line in gpio_lines(gpio_values(dbg)))
     out.append("One traced DAC read (48/40, the chip ID; 2026-11-09 on this card: 71):")
     trace = []
     try:
@@ -510,11 +543,16 @@ def pin0(dbg, card, root=STREAM_STATUS, out=None):
     if before != 0xFF:
         out.append("The DAC already answers: no pulse, nothing was written")
         return out, True
+    gpio_before = gpio_values(dbg)
+    out.append("GPIO block before the pulse:")
+    out.extend("  " + line for line in gpio_lines(gpio_before))
     dbg.w2(GPIO, keep | PIN0_LOW)
     dbg.sleep(PULSE)
     dbg.w2(GPIO, keep | PIN0_HIGH)
     dbg.sleep(0.02)
     out.append("GPIO pin 0 = 0 for 15 ms, then 1 (Windows' first D0 step)")
+    out.append("GPIO block after the pulse:")
+    out.extend("  " + line for line in gpio_lines(gpio_values(dbg), gpio_before))
     first = dac_read(dbg, 0x48, 0x07)
     out.append(f"After: 48/07 = {first:02x} (Windows reads 80 here, the power-on default)")
     trace = []
