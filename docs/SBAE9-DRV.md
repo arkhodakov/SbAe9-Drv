@@ -1,7 +1,7 @@
 # 3xHelix SbAe9-Drv: review and first contact
 
 > **Where this lives.** The `workbench` branch of the owner's fork
-> (`arkhodakov/SbAe9-Drv`): upstream `main` (0.12.5 since 2026-11-11) + the fixes of 3xHelix/SbAe9-Drv#3 +
+> (`arkhodakov/SbAe9-Drv`): upstream `main` (0.12.6 since 2026-11-12) + the fixes of 3xHelix/SbAe9-Drv#3 +
 > our test tools (`tools/`, `tools/tests/`) and this run card. The tools, their
 > tests and this file came from sb-ae9 at `4ae84b2` on 2026-11-10; sb-ae9 itself
 > is no longer developed. "sb-ae9's" below names files that stayed there. Private
@@ -193,9 +193,10 @@ python3 -B tools/sbae9drv_firmware.py --sys local/CtxHda.sys --out local/sbae9dr
   owner's fork (`origin` = `arkhodakov/SbAe9-Drv`, `upstream` = 3xHelix). The
   earlier working copy, with the local branch `arkhodakov/volume-ceiling`
   (`7b0322b` hu_max_db, `5dfa9bc`, `0746800`), was replaced by it.
-- **Branch for the PR:** `fix/dac-gpio0-head-unit-start` = `main` (`7b52a2e`, 0.12.4
-  plus a CI file) + `a685026` (board-D0 GPIO step, GPIO pin 0) + `f0bd2ae` (the
-  head unit's first frame). The same code as `5dfa9bc`/`0746800`, comments
+- **Branch for the PR:** `fix/dac-gpio0-head-unit-start`, since 2026-11-12 (local
+  until pushed) = upstream 0.12.6 (`a44ba37`) + `42b47d1` (board-D0 GPIO step) +
+  `a893fce` (the head unit's first frame). First opened on 0.12.4 (`7b52a2e`) as
+  `a685026` + `f0bd2ae`: the same code as `5dfa9bc`/`0746800`, comments
   reworded. No `hu_max_db`: with the 0 dB maximum it is not needed, and the
   runner now loads the module without options and wants `board_d0` = 1.
 - **Review PR** into the fork's own `main`: arkhodakov/SbAe9-Drv#1.
@@ -235,6 +236,34 @@ python3 -B tools/sbae9drv_firmware.py --sys local/CtxHda.sys --out local/sbae9dr
   - Risk: 0.12.5 resets the card through our ASM1083 at every load. Our old
     wedges (sb-ae9 `docs/INVESTIGATION.md`) came from unflushed ring writes, not
     from a reset, and Kaiba's same bridge passed 0.12.5's tests.
+
+- **2026-11-12, the comparison** (no wedge from the bus resets; dumps in
+  `local/sbae9drv-dumps/`):
+
+  | | plain 0.12.5, PSU-off cold boot | plain 0.12.6, reload | 0.12.6 + #3, reload |
+  |---|---|---|---|
+  | DACs (48/40) | answer (`71`) | answer | answer |
+  | head-unit frames without reply | 10 of 246 | 9 of 246 | 0 |
+  | headphones, XLR mic | silent | work | work |
+  | GPIO after bring-up (0x300 / 0x304 / 0x320) | 31 / ff / 105 | 31 / ff / 105 | 31 / ff / 105 |
+
+  - The author's guess holds for the DACs: with 0.12.5's bus reset they answer
+    without the pin 0 pulse, cold and after a reload.
+  - The head unit is a race. Plain raises pin 5 (its power, it seems: the
+    shutdown table drops it) about 40 steps before the first frame, and the
+    head unit answers only from about frame 10 on (20 ms per unanswered frame).
+    Frame 10 is the handshake: 9 lost works, 10 lost is silent. With the
+    board-D0 step pin 5 goes high seconds earlier: 0 lost in all three runs
+    with it (0.12.4, 0.12.5, 0.12.6; all reloads). The first-frame retry never
+    fired.
+  - 0.12.6 came out on 2026-11-11. Its dump adds a "Driver state" section
+    (debugfs `state`: GPIO pin levels, the unanswered head-unit frames). It
+    conflicted with #3, so both commits were rebased again, onto `a44ba37`:
+    `42b47d1` (unchanged) and `a893fce` (the retry merged with 0.12.6's
+    no-reply counters); `workbench` on top. The 0.12.5 states are kept as
+    `backup/fix-on-0.12.5` and `backup/workbench-on-0.12.5`. Plain 0.12.6
+    worktree: `~/Software/Personal/SbAe9-Drv-0.12.6`.
+  - Still open: a cold boot with #3.
 
 - **Built** by the owner on 2026-11-10 from `7b0322b` (clean tree), with no
   compiler warnings:
