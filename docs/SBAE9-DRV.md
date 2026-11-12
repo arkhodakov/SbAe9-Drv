@@ -4,7 +4,10 @@
 > (`arkhodakov/SbAe9-Drv`): upstream `main` (0.12.6 since 2026-11-12) + the fixes of 3xHelix/SbAe9-Drv#3 +
 > our test tools (`tools/`, `tools/tests/`) and this run card. The tools, their
 > tests and this file came from sb-ae9 at `4ae84b2` on 2026-11-10; sb-ae9 itself
-> is no longer developed. "sb-ae9's" below names files that stayed there. Private
+> is no longer developed. "sb-ae9's" below names files that stayed there: since
+> 2026-11-12 only in the private repository `arkhodakov/sb-ae9` (branch
+> `fedora/playback-only`, `4ae84b2`); the local copy and its git-ignored files
+> were deleted. Private
 > files go in the git-ignored `local/` of this repository. Host-only tests:
 > `for t in tools/tests/test_*.py; do python3 -B "$t"; done`.
 
@@ -189,8 +192,11 @@ python3 -B tools/sbae9drv_firmware.py --sys local/CtxHda.sys --out local/sbae9dr
 
 ## Working copy and patch
 
-- **Location:** `~/Software/Drivers/SbAe9-Drv` (moved from `~/Software/Personal` with
-  its two worktrees and sb-ae9 on 2026-11-12), since 2026-11-10 a clone of the
+- **Location:** `~/Software/Drivers/SbAe9-Drv` (moved from `~/Software/Personal` on
+  2026-11-12; the 0.12.5/0.12.6 worktrees and the `backup/*` branches were
+  deleted that day, their dumps are in `local/sbae9drv-dumps/`; next to it the
+  author's SbAe9-SBC v0.18.0 and SbAe9-AudioMon v0.4.6, the versions 0.12.6
+  pairs with), since 2026-11-10 a clone of the
   owner's fork (`origin` = `arkhodakov/SbAe9-Drv`, `upstream` = 3xHelix). The
   earlier working copy, with the local branch `arkhodakov/volume-ceiling`
   (`7b0322b` hu_max_db, `5dfa9bc`, `0746800`), was replaced by it.
@@ -242,8 +248,8 @@ python3 -B tools/sbae9drv_firmware.py --sys local/CtxHda.sys --out local/sbae9dr
   - Done locally: both commits rebased onto upstream `main` (`3094f27`, 0.12.5 +
     README): `c2593ed` (pin 0, now `msleep(16)`), `f4cf122`; `workbench`
     replayed on top. Not pushed yet (needs the owner's build check).
-  - Plain 0.12.5 for the test: worktree `~/Software/Drivers/SbAe9-Drv-0.12.5`
-    (detached at `upstream/main`, no `board_d0`).
+  - Plain 0.12.5 for the test: worktree `SbAe9-Drv-0.12.5` next to this one
+    (detached at `upstream/main`, no `board_d0`; deleted 2026-11-12).
   - The runner takes another module (`check [KO]`, `load [KO]`), accepts a build
     without `board_d0`, reports the bus-reset and head-unit-frames lines at
     load, and the engine section and the pin0 stage read the whole GPIO block
@@ -275,9 +281,9 @@ python3 -B tools/sbae9drv_firmware.py --sys local/CtxHda.sys --out local/sbae9dr
     (debugfs `state`: GPIO pin levels, the unanswered head-unit frames). It
     conflicted with #3, so both commits were rebased again, onto `a44ba37`:
     `42b47d1` (unchanged) and `a893fce` (the retry merged with 0.12.6's
-    no-reply counters); `workbench` on top. The 0.12.5 states are kept as
-    `backup/fix-on-0.12.5` and `backup/workbench-on-0.12.5`. Plain 0.12.6
-    worktree: `~/Software/Drivers/SbAe9-Drv-0.12.6`.
+    no-reply counters); `workbench` on top. The 0.12.5 states were kept as
+    `backup/fix-on-0.12.5` and `backup/workbench-on-0.12.5`, and plain 0.12.6
+    in the worktree `SbAe9-Drv-0.12.6`; all three deleted on 2026-11-12.
   - The cold boot with #3 passed the same evening (next section but one).
 
 - **Built** by the owner on 2026-11-10 from `7b0322b` (clean tree), with no
@@ -340,8 +346,9 @@ boot does not load the module. Evidence afterwards:
 journalctl -b -1 -k --no-pager | grep -e 0000:04:00.0 -e creative-ae9
 ```
 
-**Fallback:** desktop run 3 of our ca0132 path, with image `16e9ad10…` pinned on
-2026-11-10 (sb-ae9's `docs/DESKTOP-TEST.md`).
+**Fallback (gone since 2026-11-12):** desktop run 3 of our ca0132 path, with
+image `16e9ad10…` pinned on 2026-11-10 (sb-ae9's `docs/DESKTOP-TEST.md`). The
+image was deleted with sb-ae9's local files; this driver is installed instead.
 
 ### Diagnostics: the dac stage
 
@@ -462,6 +469,9 @@ also the check before an install (`local/TODO.md`, step 1).
 | 5 | `sh tools/sbae9drv_test.sh mic` | the verdict finds speech |
 | 6 | `cd ~/Software/Drivers/SbAe9-Drv-0.12.6 && sudo scripts/ae9-full-dump.sh` | `ae9-dump-<time>.txt`; its Driver state: `head unit boot frames: 246, without reply 0` |
 | 7 | start PipeWire (First contact, step 7) | |
+
+Dumps from now on (the 0.12.6 worktree is gone), straight into the dump folder:
+`cd ~/Software/Drivers/SbAe9-Drv/local/sbae9drv-dumps && sudo ../../scripts/ae9-full-dump.sh`.
 
 ### Then: the install (DKMS)
 
