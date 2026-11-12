@@ -189,7 +189,8 @@ python3 -B tools/sbae9drv_firmware.py --sys local/CtxHda.sys --out local/sbae9dr
 
 ## Working copy and patch
 
-- **Location:** `~/Software/Personal/SbAe9-Drv`, since 2026-11-10 a clone of the
+- **Location:** `~/Software/Drivers/SbAe9-Drv` (moved from `~/Software/Personal` with
+  its two worktrees and sb-ae9 on 2026-11-12), since 2026-11-10 a clone of the
   owner's fork (`origin` = `arkhodakov/SbAe9-Drv`, `upstream` = 3xHelix). The
   earlier working copy, with the local branch `arkhodakov/volume-ceiling`
   (`7b0322b` hu_max_db, `5dfa9bc`, `0746800`), was replaced by it.
@@ -219,7 +220,7 @@ python3 -B tools/sbae9drv_firmware.py --sys local/CtxHda.sys --out local/sbae9dr
 - **Build** (the owner, no root), for the running kernel:
 
   ```sh
-  make -C /lib/modules/$(uname -r)/build M=$HOME/Software/Personal/SbAe9-Drv modules
+  make -C /lib/modules/$(uname -r)/build M=$HOME/Software/Drivers/SbAe9-Drv modules
   ```
 
   The runner wants a module built for the running kernel (no longer pinned to
@@ -241,7 +242,7 @@ python3 -B tools/sbae9drv_firmware.py --sys local/CtxHda.sys --out local/sbae9dr
   - Done locally: both commits rebased onto upstream `main` (`3094f27`, 0.12.5 +
     README): `c2593ed` (pin 0, now `msleep(16)`), `f4cf122`; `workbench`
     replayed on top. Not pushed yet (needs the owner's build check).
-  - Plain 0.12.5 for the test: worktree `~/Software/Personal/SbAe9-Drv-0.12.5`
+  - Plain 0.12.5 for the test: worktree `~/Software/Drivers/SbAe9-Drv-0.12.5`
     (detached at `upstream/main`, no `board_d0`).
   - The runner takes another module (`check [KO]`, `load [KO]`), accepts a build
     without `board_d0`, reports the bus-reset and head-unit-frames lines at
@@ -276,7 +277,7 @@ python3 -B tools/sbae9drv_firmware.py --sys local/CtxHda.sys --out local/sbae9dr
     `42b47d1` (unchanged) and `a893fce` (the retry merged with 0.12.6's
     no-reply counters); `workbench` on top. The 0.12.5 states are kept as
     `backup/fix-on-0.12.5` and `backup/workbench-on-0.12.5`. Plain 0.12.6
-    worktree: `~/Software/Personal/SbAe9-Drv-0.12.6`.
+    worktree: `~/Software/Drivers/SbAe9-Drv-0.12.6`.
   - The cold boot with #3 passed the same evening (next section but one).
 
 - **Built** by the owner on 2026-11-10 from `7b0322b` (clean tree), with no
@@ -305,7 +306,7 @@ refuses otherwise. Host-only tests: `tools/tests/test_sbae9drv.py`.
 2. Root, once:
 
    ```sh
-   cd ~/Software/Personal/SbAe9-Drv
+   cd ~/Software/Drivers/SbAe9-Drv
    sudo install -D -m 0644 -t /lib/firmware/creative-ae9 local/sbae9drv-fw/creative-ae9/*.bin
    sudo rm /etc/wireplumber/wireplumber.conf.d/51-sb-ae9-desktop.conf
    sudo grubby --update-kernel=/boot/vmlinuz-7.2.13-200.fc44.x86_64 --remove-args="intel_iommu=on iommu=pt"
@@ -438,7 +439,7 @@ also the check before an install (`local/TODO.md`, step 1).
   ```sh
   sudo dnf install kernel-devel-7.3.3-200.fc44
   rm -rf /tmp/ae9-k733 && mkdir /tmp/ae9-k733
-  cd ~/Software/Personal/SbAe9-Drv
+  cd ~/Software/Drivers/SbAe9-Drv
   cp Makefile creative_ae9*.c creative_ae9*.h ca0132_regs.h /tmp/ae9-k733/
   make -C /usr/src/kernels/7.3.3-200.fc44.x86_64 M=/tmp/ae9-k733 modules
   modinfo -F vermagic /tmp/ae9-k733/snd-hda-codec-creative-ae9.ko
@@ -459,7 +460,7 @@ also the check before an install (`local/TODO.md`, step 1).
 | 3 | `sh tools/sbae9drv_test.sh level`, then `headphones` | the Master range ends at 0 dB, then −36 dB; `-HP-` |
 | 4 | `sudo sh tools/sbae9drv_test.sh dac` | the −40 dBFS tone is heard; the DAC registers as expected |
 | 5 | `sh tools/sbae9drv_test.sh mic` | the verdict finds speech |
-| 6 | `cd ~/Software/Personal/SbAe9-Drv-0.12.6 && sudo scripts/ae9-full-dump.sh` | `ae9-dump-<time>.txt`; its Driver state: `head unit boot frames: 246, without reply 0` |
+| 6 | `cd ~/Software/Drivers/SbAe9-Drv-0.12.6 && sudo scripts/ae9-full-dump.sh` | `ae9-dump-<time>.txt`; its Driver state: `head unit boot frames: 246, without reply 0` |
 | 7 | start PipeWire (First contact, step 7) | |
 
 ### Then: the install (DKMS)
@@ -468,7 +469,7 @@ The owner decided on 2026-11-12 to load the driver at boot. Only if steps 2-5
 passed, in the same session (the card is not touched):
 
 ```sh
-cd ~/Software/Personal/SbAe9-Drv
+cd ~/Software/Drivers/SbAe9-Drv
 sudo scripts/dkms-install.sh
 sudo install -m 644 config/ae9-modules-load.conf /etc/modules-load.d/creative-ae9.conf
 sudo install -m 644 config/ae9-omit.conf /etc/dracut.conf.d/ae9-omit.conf
