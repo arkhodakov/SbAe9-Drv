@@ -438,9 +438,38 @@ also the check before an install (`local/TODO.md`, step 1).
 | 6 | `cd ~/Software/Personal/SbAe9-Drv-0.12.6 && sudo scripts/ae9-full-dump.sh` | `ae9-dump-<time>.txt`; its Driver state: `head unit boot frames: 246, without reply 0` |
 | 7 | start PipeWire (First contact, step 7) | |
 
-If the owner decides on loading at boot (`local/TODO.md`, step 7), the DKMS
-install (its step 2) follows in the same session, and the next ordinary boot
-checks it: `journalctl -b -k | grep -e 'board D0' -e 'SPI frames'`.
+### Then: the install (DKMS)
+
+The owner decided on 2026-11-12 to load the driver at boot. Only if steps 2-5
+passed, in the same session (the card is not touched):
+
+```sh
+cd ~/Software/Personal/SbAe9-Drv
+sudo scripts/dkms-install.sh
+sudo install -m 644 config/ae9-modules-load.conf /etc/modules-load.d/creative-ae9.conf
+sudo install -m 644 config/ae9-omit.conf /etc/dracut.conf.d/ae9-omit.conf
+scripts/dkms-install.sh --check
+modinfo -F srcversion snd-hda-codec-creative-ae9
+```
+
+- The script copies only this tree's driver files (on `workbench` they equal
+  #3's) to `/usr/src/snd-hda-codec-creative-ae9-0.12.6/` and builds them for
+  every kernel with headers: 7.2.13 only (6.19.10 has none). Expected:
+  `built for 1 kernel(s)`; `--check` shows one copy, under `extra/`; srcversion
+  `A864F52E10FDC5288B9ED70`, the tested build's.
+- modules-load.d loads it early at boot (the author: the DSP start failed on
+  11 of 26 cold boots with udev loading alone, 0 of 150 with early loading).
+  The dracut file keeps it out of the initramfs, so it never starts before its
+  firmware is reachable. No `dracut -f`: today's initramfs has no copy.
+- The module loaded by hand stays until the reboot; nothing is reloaded.
+- The next ordinary boot is the check:
+  `journalctl -b -k | grep -e 'board D0' -e 'SPI frames'` (the DAC answers,
+  0 frames without reply), then music at a low volume.
+- Rollback: `sudo scripts/dkms-install.sh --remove` and delete the two files.
+  A boot that hangs: GRUB `e`, append `,snd_hda_codec_creative_ae9` to
+  `module_blacklist=`, Ctrl+X.
+- Experiments afterwards: `unload` first, then `load` of the other build; a
+  reload or another build still needs the owner's OK per run.
 
 ## Working with the author
 
