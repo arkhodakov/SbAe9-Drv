@@ -376,18 +376,25 @@ class FirstContactToolTests(unittest.TestCase):
         self.write("proc/cmdline", "root=UUID=fixture module_blacklist=nouveau rd.driver.blacklist=snd_hda_intel\n")
         self.write_bytes("lib/firmware/creative-ae9/ctefx-desktop.bin", b"other image")
         self.path("lib/firmware/creative-ae9/ctefx-ae9-overlay.bin").unlink()
-        self.set_state(running=["wireplumber"], vermagic="7.2.14-200.fc44.x86_64 SMP", parm="debug:Log detail")
+        self.set_state(running=["wireplumber"], vermagic=KERNEL + " SMP", parm="debug:Log detail")
         result = self.ok("check")
         firmware = str(self.path("lib/firmware/creative-ae9"))
-        for blocker in ("kernel is not " + KERNEL,
-                        "snd_hda_intel is not in module_blacklist=",
-                        "module vermagic is \"7.2.14-200.fc44.x86_64\"",
+        for blocker in ("snd_hda_intel is not in module_blacklist=",
+                        f"module vermagic is \"{KERNEL}\", not the running kernel 7.2.14-200.fc44.x86_64",
                         f"firmware {firmware}/ctefx-desktop.bin is missing or not the tested image",
                         f"firmware {firmware}/ctefx-ae9-overlay.bin is missing or not the tested image",
                         "PipeWire is running"):
             self.assertIn("NOT READY: " + blocker, result.stdout)
-        self.assertEqual(result.stdout.count("NOT READY: "), 6)
+        self.assertEqual(result.stdout.count("NOT READY: "), 5)
         self.assertNotIn("Ready for:", result.stdout)
+
+    def test_check_takes_a_newer_kernel_with_a_module_built_for_it(self):
+        self.write("proc/sys/kernel/osrelease", "7.3.3-200.fc44.x86_64\n")
+        self.set_state(vermagic="7.3.3-200.fc44.x86_64 SMP preempt mod_unload modversions")
+        result = self.ok("check")
+        self.assertIn("Kernel 7.3.3-200.fc44.x86_64", result.stdout)
+        self.assertIn("Ready for: sudo sh tools/sbae9drv_test.sh load", result.stdout)
+        self.assertNotIn("NOT READY", result.stdout)
 
     def test_load_refuses_a_user_and_every_blocker(self):
         self.refused("load", message="load needs root")

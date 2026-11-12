@@ -193,23 +193,30 @@ python3 -B tools/sbae9drv_firmware.py --sys local/CtxHda.sys --out local/sbae9dr
   owner's fork (`origin` = `arkhodakov/SbAe9-Drv`, `upstream` = 3xHelix). The
   earlier working copy, with the local branch `arkhodakov/volume-ceiling`
   (`7b0322b` hu_max_db, `5dfa9bc`, `0746800`), was replaced by it.
-- **Branch for the PR:** `fix/dac-gpio0-head-unit-start`, since 2026-11-12 (local
-  until pushed) = upstream 0.12.6 (`a44ba37`) + `42b47d1` (board-D0 GPIO step) +
+- **Branch for the PR:** `fix/dac-gpio0-head-unit-start`, since 2026-11-12 (pushed
+  that day) = upstream 0.12.6 (`a44ba37`) + `42b47d1` (board-D0 GPIO step) +
   `a893fce` (the head unit's first frame). First opened on 0.12.4 (`7b52a2e`) as
   `a685026` + `f0bd2ae`: the same code as `5dfa9bc`/`0746800`, comments
   reworded. No `hu_max_db`: with the 0 dB maximum it is not needed, and the
   runner now loads the module without options and wants `board_d0` = 1.
 - **Review PR** into the fork's own `main`: arkhodakov/SbAe9-Drv#1.
-- **Upstream PR:** 3xHelix/SbAe9-Drv#3, the same branch and text (opened
-  2026-11-10 on the owner's go; mergeable). Built from the branch: sha256
-  `c6a461ff11fc01213374fda1448ab72e1e64360a1f7358099fc73a20b1217d37`, srcversion
-  `E3B3480E6B130B65E964075`, `board_d0` and no `hu_max_db`. A cold boot with this
-  build is still to be tested.
-- **Build** (the owner, no root):
+- **Upstream PR:** 3xHelix/SbAe9-Drv#3, the same branch (opened 2026-11-10 on
+  the owner's go). On 2026-11-12 the 0.12.6 rebase was force-pushed (mergeable),
+  the description replaced, and the owner posted the comparison below with
+  three dumps. First build of the branch (0.12.4): sha256 `c6a461ff…`,
+  srcversion `E3B3480E6B130B65E964075`. Current build, 0.12.6 + #3 (2026-11-12,
+  the copy in this working tree): sha256
+  `a2952682c7c77534b22f15de7c66af19867c654d7a6ad4a27fccea301b3a4842`, srcversion
+  `A864F52E10FDC5288B9ED70`, `board_d0`. A cold boot with it is still to be
+  tested (next session, below).
+- **Build** (the owner, no root), for the running kernel:
 
   ```sh
-  make -C /lib/modules/7.2.13-200.fc44.x86_64/build M=$HOME/Software/Personal/SbAe9-Drv modules
+  make -C /lib/modules/$(uname -r)/build M=$HOME/Software/Personal/SbAe9-Drv modules
   ```
+
+  The runner wants a module built for the running kernel (no longer pinned to
+  7.2.13 since 2026-11-12).
 
 - **2026-11-11, the author's review of #3:** he agrees (Windows raises pin 0 at
   every boot; his captures show it too; his unload/shutdown leave it low, as
@@ -392,6 +399,48 @@ head, as releasing the pin may click):
 - if the DAC answers, mutes both devices as Windows does next (48/07 = `81`,
   49/0a = `07`): they come up unset, and nothing may play before the driver sets
   them up again.
+
+## Next session: a cold boot with #3
+
+The last open test of #3, under plain 0.12.5's failing conditions (PSU-off cold
+boot, the module loaded by hand as the first driver to touch the card). It is
+also the check before an install (`local/TODO.md`, step 1).
+
+### Before the reboot (no card access)
+
+- Optional: a test build for kernel 7.3.3 (in updates; the author tested 7.2.x
+  only). It builds in a copy, so the 7.2.13 module for the session stays:
+
+  ```sh
+  sudo dnf install kernel-devel-7.3.3-200.fc44
+  rm -rf /tmp/ae9-k733 && mkdir /tmp/ae9-k733
+  cd ~/Software/Personal/SbAe9-Drv
+  cp Makefile creative_ae9*.c creative_ae9*.h ca0132_regs.h /tmp/ae9-k733/
+  make -C /usr/src/kernels/7.3.3-200.fc44.x86_64 M=/tmp/ae9-k733 modules
+  modinfo -F vermagic /tmp/ae9-k733/snd-hda-codec-creative-ae9.ko
+  ```
+
+  The copied files are the ones `scripts/dkms-install.sh` copies. Until the
+  module builds and runs on 7.3.3: `sudo dnf upgrade --exclude='kernel*'`.
+- Power off fully: shut down, switch the PSU off for about 30 s, boot the normal
+  entry (7.2.13).
+
+### Session (touches the card: owner's OK for this run)
+
+| Step | Command | Expected |
+|---|---|---|
+| 0 | `sh tools/sbae9drv_test.sh check` | `Ready for: ... load`; the module with the GPIO pin 0 step |
+| 1 | stop PipeWire (First contact, step 1) | |
+| 2 | `sudo sh tools/sbae9drv_test.sh load` | `board D0: ... the DAC answers`; `head unit: 246 SPI frames (0 without reply)`; no `head unit ... after N tries` line (the retry); `LOADED` |
+| 3 | `sh tools/sbae9drv_test.sh level`, then `headphones` | the Master range ends at 0 dB, then −36 dB; `-HP-` |
+| 4 | `sudo sh tools/sbae9drv_test.sh dac` | the −40 dBFS tone is heard; the DAC registers as expected |
+| 5 | `sh tools/sbae9drv_test.sh mic` | the verdict finds speech |
+| 6 | `cd ~/Software/Personal/SbAe9-Drv-0.12.6 && sudo scripts/ae9-full-dump.sh` | `ae9-dump-<time>.txt`; its Driver state: `head unit boot frames: 246, without reply 0` |
+| 7 | start PipeWire (First contact, step 7) | |
+
+If the owner decides on loading at boot (`local/TODO.md`, step 7), the DKMS
+install (its step 2) follows in the same session, and the next ordinary boot
+checks it: `journalctl -b -k | grep -e 'board D0' -e 'SPI frames'`.
 
 ## Working with the author
 

@@ -34,7 +34,6 @@ set -f
 IFS=$(printf ' \t\n.')
 IFS=${IFS%.}
 
-KERNEL=7.2.13-200.fc44.x86_64
 PCI=/sys/bus/pci/devices/0000:04:00.0
 BRIDGE=/sys/bus/pci/devices/0000:03:00.0
 MODULE=snd_hda_codec_creative_ae9
@@ -172,8 +171,12 @@ module_report() {
         printf 'module %s is missing (build it in %s)\n' "$KO" "$DRV"
         return
     fi
+    # Built for the running kernel: insmod refuses anything else. Since 2026-11-12 not
+    # pinned to 7.2.13 (the first build); a new kernel is the owner's call, after a test build.
     vermagic=$(modinfo -F vermagic "$KO" 2>/dev/null)
-    [ "${vermagic%% *}" = "$KERNEL" ] || printf 'module vermagic is "%s", not %s\n' "${vermagic%% *}" "$KERNEL"
+    running=$(read_file /proc/sys/kernel/osrelease)
+    [ "${vermagic%% *}" = "$running" ] ||
+        printf 'module vermagic is "%s", not the running kernel %s (rebuild it)\n' "${vermagic%% *}" "$running"
 }
 has_board_d0() {
     # Whether the module carries the GPIO pin 0 step (our fix; plain upstream has none).
@@ -189,7 +192,6 @@ firmware_report() {
 }
 preflight() {
     # Every reason the card is not ready for a first load, one per line.
-    [ "$(read_file /proc/sys/kernel/osrelease)" = "$KERNEL" ] || printf 'kernel is not %s\n' "$KERNEL"
     blacklisted=no
     for word in $(cat /proc/cmdline); do
         case "$word" in
