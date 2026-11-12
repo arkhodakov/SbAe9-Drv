@@ -207,8 +207,15 @@ python3 -B tools/sbae9drv_firmware.py --sys local/CtxHda.sys --out local/sbae9dr
   srcversion `E3B3480E6B130B65E964075`. Current build, 0.12.6 + #3 (2026-11-12,
   the copy in this working tree): sha256
   `a2952682c7c77534b22f15de7c66af19867c654d7a6ad4a27fccea301b3a4842`, srcversion
-  `A864F52E10FDC5288B9ED70`, `board_d0`. A cold boot with it is still to be
-  tested (next session, below).
+  `A864F52E10FDC5288B9ED70`, `board_d0`. Its cold boot passed on the evening of
+  2026-11-12 (below); it is installed with DKMS since then.
+- **Merged** (the author, 2026-11-12, comment on #3): the race shows on his card
+  too, milder (his head unit needed 3 tries without the step; the retry caught
+  it); with the step 0 of 246 lost in 3 reloads and a PSU-off cold boot. Both
+  commits are in his tree on 0.12.7, with the owner's name, for 0.12.8. His
+  changes: the board-D0 check uses 0.12.7's own DAC read helper, three reads,
+  the last kept ("a single read returns the previous result"); the retry is
+  cut to about 1 s.
 - **Build** (the owner, no root), for the running kernel:
 
   ```sh
@@ -270,7 +277,7 @@ python3 -B tools/sbae9drv_firmware.py --sys local/CtxHda.sys --out local/sbae9dr
     no-reply counters); `workbench` on top. The 0.12.5 states are kept as
     `backup/fix-on-0.12.5` and `backup/workbench-on-0.12.5`. Plain 0.12.6
     worktree: `~/Software/Personal/SbAe9-Drv-0.12.6`.
-  - Still open: a cold boot with #3.
+  - The cold boot with #3 passed the same evening (next section but one).
 
 - **Built** by the owner on 2026-11-10 from `7b0322b` (clean tree), with no
   compiler warnings:
@@ -400,11 +407,28 @@ head, as releasing the pin may click):
   49/0a = `07`): they come up unset, and nothing may play before the driver sets
   them up again.
 
-## Next session: a cold boot with #3
+## The cold boot with #3, then the install (2026-11-12 evening)
 
 The last open test of #3, under plain 0.12.5's failing conditions (PSU-off cold
 boot, the module loaded by hand as the first driver to touch the card). It is
 also the check before an install (`local/TODO.md`, step 1).
+
+**Result: passed, and installed.** The owner: "Всё работает!"
+
+- Cold boot (20:23; the load logged no "DSP firmware flag set from an earlier
+  run", so the card had been off): `board D0: GPIO pin 0 pulsed, the DAC
+  answers (48/40 = 0x72)`, `246 SPI frames (0 without reply)`, no retry line,
+  both 3.5 mm plugs out. `level` ends at 0 dB; the head unit was already on
+  Headphones; the dac tone was heard; `mic` +36.3 dB (speech −11 dBFS peak).
+  Dump: `local/sbae9drv-dumps/ae9-dump-20261112-202836-pr-0.12.6-cold.txt`
+  (`head unit boot frames: 246, without reply 0`; GPIO `31`/`ff`/`105`).
+- DKMS install at 20:29: 0.12.6 for 7.2.13, srcversion `A864F52E10FDC5288B9ED70`
+  (the tested build's), both config files in `/etc`.
+- Next boot (a reboot, 20:30): loaded early (23 s after the kernel start, the
+  LUKS prompt included), DAC answers, 0 of 246 without reply, plugs out.
+- The `load` and `dac` stages run as root and log under root's home, so their
+  output is not in `~/.local/state/sb-ae9/sbae9drv.log`; the kernel log has
+  the load lines.
 
 ### Before the reboot (no card access)
 

@@ -1,8 +1,9 @@
 #!/bin/sh
 # Test stages for the 3xHelix SbAe9-Drv driver (module snd-hda-codec-creative-ae9,
 # built in this repository, with the board_d0 option, the GPIO pin 0 fix) in a NORMAL
-# Fedora boot. The module is loaded by hand and never installed: the next boot does not
-# load it. Moved here from sb-ae9 (4ae84b2) on 2026-11-10.
+# Fedora boot. Since 2026-11-12 this tree's driver (0.12.6 + #3) is installed with DKMS and
+# loads at every boot: to load another build by hand, unload the installed one first.
+# Moved here from sb-ae9 (4ae84b2) on 2026-11-10.
 # The stages after check touch the card: run them only with the owner's OK.
 #   sh tools/sbae9drv_test.sh check [KO]    read-only: kernel, blacklist, card, bridge, module, firmware, PipeWire
 #   sudo sh tools/sbae9drv_test.sh load [KO]  insmod (no options), then the bring-up log (with the board-D0 line
